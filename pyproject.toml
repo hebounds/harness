@@ -1,0 +1,64 @@
+[project]
+name = "harness"
+version = "0.1.0"
+description = "An opinionated agent orchestration system"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "typer>=0.12,<1.0",
+    "jinja2>=3.1,<4.0",
+    "tiktoken>=0.7,<1.0",
+    "gitpython>=3.1,<4.0",
+    "mcp>=1.0,<2.0",
+    "rich>=13.0,<14.0",
+]
+
+[project.optional-dependencies]
+memory = [
+    "sqlite-vss>=0.1",
+    "fastembed>=0.3,<1.0",
+]
+profiles = [
+    "tree-sitter>=0.22,<1.0",
+    "tree-sitter-languages>=1.10,<2.0",
+]
+all = ["harness[memory,profiles]"]
+dev = [
+    "harness[all]",
+    "pytest>=8.0,<9.0",
+    "pytest-asyncio>=0.23,<1.0",
+    "mypy>=1.10,<2.0",
+    "ruff>=0.4,<1.0",
+]
+
+[project.scripts]
+harness = "harness.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/harness"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "TCH"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.20.0",
+    "pydantic>=2.12.5",
+]
