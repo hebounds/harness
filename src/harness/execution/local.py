@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from harness.core.models.prd import Story
+from harness.core.worktree import WorktreeManager
 from harness.execution.models import Context
 
 
@@ -15,16 +16,25 @@ class LocalWorktreeEnvironment:
 
     network_policy: Literal["full", "restricted", "gapped"] = "full"
 
-    def __init__(self, root_path: Path) -> None:
+    def __init__(
+        self,
+        root_path: Path,
+        dep_install_command: list[str] | None = None,
+    ) -> None:
         self._root_path = root_path
         self._context: Context | None = None
+        self._worktree_manager = WorktreeManager(
+            root_path=root_path,
+            env=self,
+            dep_install_command=dep_install_command,
+        )
 
     def get_root(self) -> Path:
         return self._root_path
 
     async def setup(self, story: Story) -> Context:
-        worktree_path = self._root_path / ".harness" / "worktrees" / story.id
         branch_name = f"worktree-{story.id.lower()}"
+        worktree_path = await self._worktree_manager.create(story.id, branch_name)
         self._context = Context(
             root_path=self._root_path,
             worktree_path=worktree_path,
@@ -54,4 +64,9 @@ class LocalWorktreeEnvironment:
         )
 
     async def teardown(self) -> None:
-        self._context = None
+        if self._context is not None:
+            story_id = self._context.story_id
+            self._context = None  # clear first so execute() uses root_path for git commands
+            await self._worktree_manager.teardown(story_id)
+        else:
+            self._context = None

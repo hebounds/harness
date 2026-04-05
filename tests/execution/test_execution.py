@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -21,6 +22,14 @@ def _make_story(story_id: str = "US-003") -> Story:
         acceptanceCriteria=[],
         priority=1,
     )
+
+
+def _mock_git_proc(returncode: int = 0) -> MagicMock:
+    """Return a mock asyncio Process that reports a git success/failure."""
+    proc = MagicMock()
+    proc.returncode = returncode
+    proc.communicate = AsyncMock(return_value=(b"", b""))
+    return proc
 
 
 class TestContext:
@@ -53,9 +62,14 @@ class TestLocalWorktreeEnvironment:
 
     @pytest.mark.asyncio
     async def test_setup_returns_context(self, tmp_path: Path) -> None:
-        env = LocalWorktreeEnvironment(tmp_path)
-        story = _make_story("US-003")
-        ctx = await env.setup(story)
+        with patch(
+            "harness.execution.local.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=_mock_git_proc(0),
+        ):
+            env = LocalWorktreeEnvironment(tmp_path)
+            story = _make_story("US-003")
+            ctx = await env.setup(story)
         assert isinstance(ctx, Context)
         assert ctx.story_id == "US-003"
         assert ctx.root_path == tmp_path
@@ -64,20 +78,34 @@ class TestLocalWorktreeEnvironment:
 
     @pytest.mark.asyncio
     async def test_execute_returns_tuple(self, tmp_path: Path) -> None:
-        env = LocalWorktreeEnvironment(tmp_path)
-        story = _make_story()
-        ctx = await env.setup(story)
-        ctx.worktree_path.mkdir(parents=True, exist_ok=True)
+        # Patch only for the git worktree add during setup, then let execute run real commands
+        git_proc = _mock_git_proc(0)
+        with patch(
+            "harness.execution.local.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=git_proc,
+        ) as mock_exec:
+            env = LocalWorktreeEnvironment(tmp_path)
+            story = _make_story()
+            ctx = await env.setup(story)
+            ctx.worktree_path.mkdir(parents=True, exist_ok=True)
+            mock_exec.return_value = None  # stop mocking for next call
+
         returncode, stdout, stderr = await env.execute("echo", "hello")
         assert returncode == 0
         assert "hello" in stdout
 
     @pytest.mark.asyncio
     async def test_teardown_clears_context(self, tmp_path: Path) -> None:
-        env = LocalWorktreeEnvironment(tmp_path)
-        story = _make_story()
-        await env.setup(story)
-        await env.teardown()
+        with patch(
+            "harness.execution.local.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=_mock_git_proc(0),
+        ):
+            env = LocalWorktreeEnvironment(tmp_path)
+            story = _make_story()
+            await env.setup(story)
+            await env.teardown()
         assert env._context is None
 
     @pytest.mark.asyncio
@@ -86,6 +114,7 @@ class TestLocalWorktreeEnvironment:
         returncode, stdout, _ = await env.execute("pwd")
         assert returncode == 0
         assert str(tmp_path) in stdout.strip()
+
 
 
 class TestContainerEnvironment:
