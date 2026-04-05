@@ -1,0 +1,9 @@
+I write my own because things are constantly evolving. Also, why lock yourself into a compromise that is built to be everything for everyone and that comes with the extra tokens that are required for that? Less is more.
+
+My harness is modular. I have a tasks folder with focus and done, and rules for task formatting. I have a personas (skills) folder with a shared skills that the others inherit from, and that is grouped into macro (think personality and thinking patterns -- one is a Steve Jobs persona for example) and micro (uidev, security, testengineer, performance, refactor, auth, etc.). Then I have groups for guides (like style guide, architecture patterns), and agent protocols (basically sub files that agents.md (symlinked as claude.md so I can choose the agent) inherits when triggered by certain keywords). I treat agents.md like an index/router instead of as the rules file to reduce context and it has paid off along with my other context optimizations-I'm on the 200 plan and have not been able to approach the limits despite having two 225k LOC projects and around 15 others that are token intensive. As the models get better, these get smaller. I do a post sprint retrospective weekly. This is tip of the iceberg, but a decent portion.
+
+I also use cypress.io instead of playwright (faster). Most of my innovation time lately has gone into making my design and refactoring components better. Last week I nailed the UI I had been chasing for 3 months and refactored down from 225k to 165k LOC, both in a three day period-no issues. It turns out that CC generates a ton of bloat, and then leaves it around like a kids leaves toys lying around all over the house. Upkeep is maybe 15-35% of the harness now (I haven't sized it up, just a guess).
+
+https://github.com/ivo-toby/claudecraft
+
+https://github.com/ivo-toby/mini-spec

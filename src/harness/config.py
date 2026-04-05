@@ -32,7 +32,7 @@ class HarnessConfig(BaseModel):
 
     # Paths
     prd_path: Path = Path("tasks/prd.json")
-    progress_dir: Path = Path("progress")
+    progress_dir: Path = Path("tasks/progress")
     claims_dir: Path = Path("tasks/claims")
     worktree_base: Path = Path(".worktrees")
     harness_dir: Path = Path(".harness")
