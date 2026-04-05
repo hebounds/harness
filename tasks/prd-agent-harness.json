@@ -1,0 +1,406 @@
+{
+  "project": "Harness",
+  "branchName": "ralph/agent-harness",
+  "description": "Harness - An Opinionated Agent Orchestration System that moves all deterministic operations out of LLM prompts into a Python orchestration layer",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "HarnessConfig Pydantic model and harness init command",
+      "description": "As a developer, I want a validated configuration model and scaffold command so that I can initialize a harness project with sensible defaults.",
+      "acceptanceCriteria": [
+        "HarnessConfig Pydantic v2 model in config.py with fields: model, runtime, max_iterations, prd_path, progress_path, tool_allowlist, tool_denylist, language_profiles, max_parallel_agents, max_retries, max_prompt_tokens, verification_command",
+        "harness init command scaffolds harness_config.py from a template with all config fields and inline comments",
+        "harness init is idempotent — prompts before overwriting an existing config",
+        "Config loads and validates successfully from a harness_config.py file via importlib",
+        "Invalid config fields raise a clear Pydantic ValidationError with field name and reason",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Core data models (PRD, Story, Progress, Diagnostic)",
+      "description": "As a developer, I want typed Pydantic models for all internal data structures so that every layer of the harness has validated, IDE-autocomplete-friendly types.",
+      "acceptanceCriteria": [
+        "Story model in core/models/prd.py: id, title, description, acceptanceCriteria, priority, passes, notes, dependsOn (list[str], default []), parallelGroup (str | None)",
+        "PRD model: project, branchName, description, userStories (list[Story])",
+        "ProgressEntry model in core/models/progress.py: story_id, timestamp (ISO-8601), status (pending | in_progress | passed | failed), files_changed (list[str]), body (markdown str)",
+        "Diagnostic model in core/models/verify.py: file, line, column, severity, message, rule",
+        "AgentResult model in core/models/output.py: status (complete | failed | partial), completion_signal_found (bool), files_modified (list[str]), raw_output (str)",
+        "All models serialise to/from JSON without loss",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "ExecutionEnvironment protocol and LocalWorktreeEnvironment",
+      "description": "As a harness architect, I want all agent execution to go through an ExecutionEnvironment interface so that swapping from local to container execution requires only a new implementation.",
+      "acceptanceCriteria": [
+        "ExecutionEnvironment Protocol in execution/base.py with async methods: setup(story) -> Context, execute(command, *args) -> tuple[int, str, str], get_root() -> Path, async teardown()",
+        "Context dataclass holds: root_path, worktree_path, branch_name, story_id",
+        "Protocol has network_policy field typed as Literal['full', 'restricted', 'gapped'] with default 'full'",
+        "LocalWorktreeEnvironment in execution/local.py implements the full protocol using local filesystem and subprocess",
+        "ContainerEnvironment in execution/container.py is stubbed — all methods raise NotImplementedError with a descriptive message",
+        "All harness managers (Claim, Worktree, Branch) accept an ExecutionEnvironment instance rather than calling os/subprocess directly",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "ClaimManager — atomic story claiming",
+      "description": "As a harness system, I want atomic claim creation and release so that two parallel harness processes can never claim the same story.",
+      "acceptanceCriteria": [
+        "ClaimManager in core/claim.py with methods: claim(story_id) -> bool, release(story_id) -> None, is_claimed(story_id) -> bool, cleanup_stale(max_age_minutes: int = 30) -> list[str]",
+        "claim() uses os.open with O_CREAT | O_EXCL flags to atomically create the claim file — returns False without raising if already claimed",
+        "Claim files written to {root_path}/tasks/claims/{story_id}.claim containing ISO-8601 timestamp and PID",
+        "cleanup_stale() removes claim files older than max_age_minutes and returns a list of cleaned story IDs",
+        "release() deletes the claim file; safe to call when no claim exists",
+        "ClaimManager accepts root_path: Path as constructor argument — no global state",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "WorktreeManager — git worktree lifecycle",
+      "description": "As a harness system, I want programmatic git worktree creation and teardown so that each story runs in an isolated working directory.",
+      "acceptanceCriteria": [
+        "WorktreeManager in core/worktree.py with methods: create(story_id, branch_name) -> Path, teardown(story_id) -> None, get_path(story_id) -> Path | None",
+        "create() adds a git worktree at {root_path}/.harness/worktrees/{story_id}/, creates and checks out a new branch named branch_name",
+        "create() symlinks .env from the main repo root into the worktree if .env exists",
+        "create() runs the project's dep-install command (configurable, e.g. uv sync) inside the worktree after creation",
+        "teardown() removes the worktree via git worktree remove --force and cleans up the directory",
+        "WorktreeManager accepts root_path: Path and env: ExecutionEnvironment as constructor arguments",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "BranchManager and ArchiveManager",
+      "description": "As a harness system, I want git branch management and PRD archiving so that completed features are merged cleanly and old PRDs are preserved.",
+      "acceptanceCriteria": [
+        "BranchManager in core/branch.py with methods: create(branch_name, base_branch) -> None, merge(branch_name, base_branch) -> bool, has_conflicts(branch_name) -> bool",
+        "merge() returns True on success; returns False (does not raise) when merge conflicts are detected — harness logs and pauses for human",
+        "ArchiveManager in core/archive.py with methods: archive(prd_path, progress_path, archive_dir) -> Path",
+        "archive() creates {archive_dir}/YYYY-MM-DD-{prd-name}/ and copies prd.json + progress file into it",
+        "Both managers accept root_path: Path and operate through ExecutionEnvironment for git commands",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "ProgressManager and PRD-scoped progress files",
+      "description": "As a developer, I want progress tracking scoped per-PRD so that each feature's history is self-contained and I can query context-window-friendly summaries.",
+      "acceptanceCriteria": [
+        "ProgressManager in core/progress.py with methods: append(entry: ProgressEntry) -> None, summarize(max_tokens: int) -> str, get_entries(story_id: str | None) -> list[ProgressEntry], select_context(current_story_id, changed_files) -> str",
+        "Each PRD gets a companion file at {root_path}/progress/prd-{name}.progress.md",
+        "Global codebase patterns file at {root_path}/progress/codebase-patterns.md",
+        "Progress entries written with machine-readable YAML frontmatter (story_id, timestamp, status, files_changed) followed by markdown body",
+        "summarize() fits the most recent entries and global patterns within max_tokens using tiktoken counting",
+        "select_context() returns: global patterns + current PRD entries + entries from other PRDs that overlap on changed_files",
+        "ProgressManager accepts root_path: Path constructor argument",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "DagScheduler — dependency graph and parallel execution planning",
+      "description": "As a developer, I want PRD stories scheduled via a dependency graph so that independent stories run in parallel and the harness can compute execution waves.",
+      "acceptanceCriteria": [
+        "DagScheduler in core/scheduler.py with methods: build(stories: list[Story]) -> None, get_ready() -> list[Story], mark_complete(story_id: str) -> None, mark_failed(story_id: str) -> None, get_critical_path() -> list[str], get_waves() -> list[list[str]], has_cycle() -> bool",
+        "build() raises ValueError with cycle details if a dependency cycle is detected — uses graphlib.TopologicalSorter",
+        "get_ready() returns stories whose dependsOn list is fully satisfied (all deps marked complete) and that are not yet claimed or complete",
+        "Stories with empty dependsOn are immediately ready",
+        "get_waves() returns sequential groups where all stories in a group can execute in parallel",
+        "harness plan command prints: wave list with story IDs and titles, critical path, total wave count",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "LanguageProfile Protocol and auto-detection",
+      "description": "As a developer, I want a pluggable language profile protocol so that any language's native toolchain can be integrated uniformly.",
+      "acceptanceCriteria": [
+        "LanguageProfile Protocol in profiles/base.py with methods: lint(file: Path) -> list[Diagnostic], format(file: Path) -> str, typecheck(project: Path) -> list[Diagnostic], get_symbols(file: Path) -> list[Symbol], find_references(symbol_name: str, project: Path) -> list[Location]",
+        "Symbol dataclass: name, kind (function | class | variable | import | other), line, column, file",
+        "Location dataclass: file, line, column, context_line (the source line as a string)",
+        "detect_profile(root: Path) -> str | None function that returns language key by checking: pyproject.toml → 'python', tsconfig.json → 'typescript', go.mod → 'go', Cargo.toml → 'rust'",
+        "load_profile(language: str) -> LanguageProfile function that imports harness/profiles/{language}.py and returns the profile instance",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Python language profile (mypy, ruff, pyright, tree-sitter)",
+      "description": "As a developer, I want a Python language profile so that the harness has structural code understanding for Python projects.",
+      "acceptanceCriteria": [
+        "PythonProfile in profiles/python.py implements LanguageProfile Protocol",
+        "lint() shells out to ruff check --output-format=json and parses the JSON array of diagnostics",
+        "format() shells out to ruff format --diff and returns the formatted content",
+        "typecheck() shells out to mypy --output json and parses the per-line JSON output",
+        "get_symbols() uses tree-sitter (tree-sitter-python grammar) to extract function, class, and top-level variable definitions",
+        "find_references() shells out to pyright --outputjson and extracts reference locations",
+        "All subprocess calls use asyncio.create_subprocess_exec and are awaited",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "TypeScript language profile (tsc, eslint, prettier, tsserver)",
+      "description": "As a developer, I want a TypeScript language profile so that the harness has structural code understanding for TypeScript projects.",
+      "acceptanceCriteria": [
+        "TypeScriptProfile in profiles/typescript.py implements LanguageProfile Protocol",
+        "lint() shells out to eslint --format=json and parses the JSON diagnostics array",
+        "format() shells out to prettier --write and returns the formatted file content",
+        "typecheck() shells out to tsc --noEmit --pretty false and parses the compiler output",
+        "get_symbols() uses tree-sitter (tree-sitter-typescript grammar) to extract function, class, interface, and type alias definitions",
+        "find_references() communicates with tsserver via its stdio JSON protocol to resolve cross-file references",
+        "All subprocess calls use asyncio.create_subprocess_exec and are awaited",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "MemoryIndex — vector DB with semantic search",
+      "description": "As a harness system, I want a vector database that indexes progress entries, patterns, and code summaries so agents can retrieve relevant context via similarity search instead of receiving full file dumps.",
+      "acceptanceCriteria": [
+        "MemoryIndex in memory/index.py with methods: index_progress(entry: ProgressEntry) -> None, index_pattern(content: str, tags: list[str]) -> None, index_code_summary(file: Path, symbols: list[Symbol]) -> None, search(query: str, top_k: int = 5) -> list[MemoryResult]",
+        "MemoryResult dataclass in memory/models.py: content, source_type (progress | pattern | code), score (float), metadata (dict)",
+        "Storage uses SQLite with sqlite-vss extension at {root_path}/.harness/memory.db",
+        "Embeddings generated via fastembed (ONNX-based) as default provider; optional OpenAI embeddings API configurable via HarnessConfig",
+        "Optional openai embeddings: if HarnessConfig.embedding_provider == 'openai', use openai.Embedding.create instead of fastembed",
+        ".harness/memory.db is added to .gitignore on first creation",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "PromptBuilder with token ceiling and Jinja2 templates",
+      "description": "As a harness system, I want to assemble a minimal, focused system prompt for each agent invocation that stays under a token ceiling.",
+      "acceptanceCriteria": [
+        "PromptBuilder in prompt/builder.py with method: build(story: Story, context: PromptContext) -> str",
+        "PromptContext dataclass: patterns (str), prd_progress (str), available_tools (list[str]), language_guidance (str), base_branch (str), worktree_dir (str)",
+        "Prompt assembled from Jinja2 templates in prompt/templates/: role.j2, story.j2, patterns.j2, tools.j2, language.j2",
+        "Template variables {{STORY_ID}}, {{BASE_BRANCH}}, {{WORKTREE_DIR}} resolved by the harness — never left as placeholders in the output",
+        "Assembled prompt includes 'MUST USE' directive for AST/lint/typecheck tools when profile is active",
+        "Token count computed via tiktoken; when assembled prompt exceeds max_prompt_tokens config value, the lowest-priority section (language guidance, then patterns) is truncated with a warning log",
+        "Typical assembled prompt is under 2000 tokens for a standard story",
+        "Prompt includes zero lifecycle instructions (no worktree setup, branch creation, or claiming instructions)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "MCP server — stdio transport and lifecycle management",
+      "description": "As an agent, I want a local MCP server managed by the harness so that I can query codebase context on demand without relying on prompt stuffing.",
+      "acceptanceCriteria": [
+        "MCP server in mcp/server.py using the mcp Python SDK with stdio transport",
+        "Harness starts the MCP server as a subprocess via asyncio.create_subprocess_exec; server is torn down when the story completes or harness exits",
+        "MCP server config (server command, args, env) is auto-generated and written to the Copilot MCP settings file at ~/.config/copilot/mcp.json (or platform equivalent)",
+        "server.py exposes a start() coroutine and a stop() coroutine; stop() sends SIGTERM and waits for graceful exit",
+        "Server registers all tools from mcp/tools.py on startup",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "MCP tool implementations (PRD status, patterns, progress, code intelligence)",
+      "description": "As an agent, I want read-only MCP tools that expose PRD status, patterns, progress, symbols, diagnostics, references, and semantic search so that I can pull context without prompt stuffing.",
+      "acceptanceCriteria": [
+        "get_prd_status tool returns: list of stories with id, title, passes, priority — filtered to current PRD from config",
+        "get_patterns tool uses MemoryIndex.search(query, top_k=5) to return semantically relevant patterns rather than dumping the full patterns file",
+        "get_progress tool returns the current PRD's progress entries, most recent first, up to a configurable limit",
+        "get_file_symbols tool calls active LanguageProfile.get_symbols(file) and returns a summary (name, kind, line) — not the full AST",
+        "get_diagnostics tool calls active LanguageProfile.lint(file) and optionally LanguageProfile.typecheck(project) and returns Diagnostic list",
+        "search_references tool calls active LanguageProfile.find_references(symbol_name, project) and returns Location list",
+        "search_memory tool delegates to MemoryIndex.search(query, top_k) and returns MemoryResult list",
+        "All 7 tools are read-only — no writes to harness state",
+        "Each tool returns a structured JSON-serialisable response",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "AgentOutputParser — real-time stream parsing and completion detection",
+      "description": "As a harness system, I want to parse agent stdout in real-time so I can detect completion, failure, and partial-progress signals and decide whether to commit, retry, or escalate.",
+      "acceptanceCriteria": [
+        "AgentOutputParser in core/output.py with async method: parse_stream(stdout: asyncio.StreamReader, stderr: asyncio.StreamReader) -> AgentResult",
+        "Detects completion signal: configurable string, default '<promise>COMPLETE</promise>'",
+        "Detects failure signals: configurable list of strings the agent may emit to indicate it cannot complete",
+        "On completion: checks git status in the worktree — sets AgentResult.files_modified from the uncommitted/committed diff",
+        "On partial completion (agent ran out of context): sets status='partial' and logs state for narrowed retry",
+        "All completion, failure, and partial events logged with structured metadata (story_id, timestamp, signal_text, files_modified)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "VerificationGate — post-completion lint/typecheck and retry logic",
+      "description": "As a harness system, I want automated verification checks between agent completion and merge so that broken code never reaches the base branch.",
+      "acceptanceCriteria": [
+        "VerificationGate in core/verify.py with async method: run(story: Story, worktree: Path, profile: LanguageProfile, retries_remaining: int) -> tuple[bool, list[Diagnostic]]",
+        "Default checks: profile.lint(worktree), profile.typecheck(worktree); optional project-level test command from HarnessConfig.verification_command",
+        "On success (zero errors): returns (True, [])",
+        "On failure with retries_remaining > 0: returns (False, diagnostics) — caller re-invokes agent with diagnostics appended as 'Fix these issues'",
+        "On failure with retries_remaining == 0: preserves worktree, marks story as failed in PRD JSON, logs full diagnostic output, prints human-readable alert to stderr",
+        "Gate result written as a ProgressEntry with structured metadata",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Workflow engine — DAG of agent stages with state persistence",
+      "description": "As a developer, I want to define multi-agent workflows as DAGs of named stages so that complex operations are broken into specialised passes that can resume after a crash.",
+      "acceptanceCriteria": [
+        "WorkflowStage dataclass in workflows/engine.py: name, prompt_override (str | None), tool_permissions (list[str] | None), max_iterations (int), success_criteria (str | None)",
+        "Workflow dataclass: name, stages (list[WorkflowStage]), description",
+        "WorkflowEngine.run(workflow, story, context) executes stages sequentially, passing prior stage output as context to the next",
+        "Workflow state persisted as JSON at {root_path}/.harness/workflow-state-{story_id}.json after each stage completes",
+        "WorkflowEngine.resume(story_id) reads state file and skips already-completed stages, continuing from last successful stage",
+        "Parallel stages supported: WorkflowStage.parallel_group (str | None) — stages with the same group name execute via asyncio.gather",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Built-in workflows — implement, review, refactor, full-cycle",
+      "description": "As a developer, I want built-in workflow definitions for common operations so that I can run harness with a named workflow without writing configuration.",
+      "acceptanceCriteria": [
+        "Four built-in Workflow instances in workflows/builtins.py: IMPLEMENT, REVIEW, REFACTOR, FULL_CYCLE",
+        "IMPLEMENT: single stage — standard implement prompt, all tools allowed, max_iterations from config",
+        "REVIEW: single stage — repo-review prompt override, read-only tool set, max_iterations=1",
+        "REFACTOR: single stage — refactor prompt override with AST MUST USE directive, all tools, max_iterations from config",
+        "FULL_CYCLE: four sequential stages — implement → lint-fix → review → address-review; each stage has appropriate prompt override and tool permissions",
+        "get_workflow(name: str) -> Workflow function raises ValueError with available names if name not found",
+        "harness run --workflow <name> executes the named workflow via WorkflowEngine",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "harness run — full orchestration loop with parallel execution",
+      "description": "As a developer, I want harness run to orchestrate the full agent lifecycle end-to-end so that I can invoke it once and have stories claimed, executed, verified, and merged automatically.",
+      "acceptanceCriteria": [
+        "harness run reads HarnessConfig, loads PRD JSON, builds DagScheduler graph",
+        "Calls DagScheduler.get_ready() and dispatches up to max_parallel_agents stories concurrently via asyncio.gather",
+        "Per-story loop: ClaimManager.claim → WorktreeManager.create → detect/load LanguageProfile → MemoryIndex.search → MCP server start → PromptBuilder.build → agent invocation → AgentOutputParser.parse_stream → VerificationGate.run → ProgressManager.append → MemoryIndex.index_progress → BranchManager.merge → WorktreeManager.teardown → ClaimManager.release → PRD update",
+        "On agent failure with retries remaining: re-invokes with diagnostics appended; retries count against HarnessConfig.max_retries",
+        "On unrecoverable failure: preserves worktree, marks story failed, releases claim, continues to next ready story",
+        "After each story completes: calls DagScheduler.mark_complete/mark_failed and re-evaluates ready stories",
+        "Exits cleanly when DAG is exhausted or max_iterations reached",
+        "harness run --dry-run prints what it would do without invoking the agent",
+        "harness run --workflow <name> uses WorkflowEngine instead of the default single-stage loop",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "harness plan and harness status CLI commands",
+      "description": "As a developer, I want plan and status commands so that I can inspect the execution plan and current story states before and during a run.",
+      "acceptanceCriteria": [
+        "harness plan reads HarnessConfig and PRD JSON, builds DagScheduler, prints: wave number, story IDs and titles per wave, critical path story IDs in order, total wave count",
+        "harness status reads current claims directory and PRD JSON, prints per-story status: pending | claimed (with PID and age) | passed | failed",
+        "Both commands exit with code 0 on success; code 1 on config / PRD parse errors with a clear error message to stderr",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "MCP catalog — recommended server configs and harness init integration",
+      "description": "As a developer, I want the harness to ship with recommended MCP server configurations and briefings so that agents can leverage external tools when available.",
+      "acceptanceCriteria": [
+        "mcp_catalog/ directory at package root with four JSON configs: github.json, filesystem.json, browser.json, database.json",
+        "Each config file contains: server_package, install_command, required_env_vars (list), capability_description, agent_usage_guide (when to use this tool, 2-3 sentences)",
+        "harness init prompts the user to select from the catalog and writes chosen server configs to .harness/mcp-servers.json",
+        "PromptBuilder includes an 'Available External Tools' section listing enabled MCP servers with one-line usage notes when .harness/mcp-servers.json exists",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

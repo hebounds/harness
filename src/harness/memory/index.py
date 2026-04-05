@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from harness.core.models.memory import MemoryResult
+from harness.memory.models import MemoryResult
 
 __all__ = ["MemoryResult"]

@@ -33,9 +33,7 @@ class DagScheduler:
     def plan(self) -> ExecutionPlan:
         """Return parallelisable waves and the critical path for all stories."""
         story_map = {s.id: s for s in self._prd.user_stories}
-        dep_map: dict[str, set[str]] = {
-            s.id: set(s.depends_on) for s in self._prd.user_stories
-        }
+        dep_map: dict[str, set[str]] = {s.id: set(s.depends_on) for s in self._prd.user_stories}
 
         sorter: graphlib.TopologicalSorter[str] = graphlib.TopologicalSorter(dep_map)
         try:

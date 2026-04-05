@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -17,11 +17,11 @@ def run(
         typer.Option("--config", "-c", help="Path to harness config"),
     ] = Path("harness_config.py"),
     workflow: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--workflow", "-w", help="Named workflow to execute"),
     ] = None,
     parallel: Annotated[
-        Optional[int],
+        int | None,
         typer.Option("--parallel", help="Max parallel agents"),
     ] = None,
     dry_run: Annotated[
@@ -49,7 +49,9 @@ def run(
         if all(s.passes for s in prd.user_stories):
             console.print("[green]All stories completed![/green]")
         else:
-            console.print("[yellow]Remaining stories have unmet dependencies or are failed.[/yellow]")
+            console.print(
+                "[yellow]Remaining stories have unmet dependencies or are failed.[/yellow]"
+            )
         raise typer.Exit(0)
 
     if dry_run:

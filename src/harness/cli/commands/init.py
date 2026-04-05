@@ -7,8 +7,8 @@ from typing import Annotated
 
 import typer
 
-from harness.config import DEFAULT_CONFIG_TEMPLATE
 from harness.cli._utils import console
+from harness.config import DEFAULT_CONFIG_TEMPLATE
 
 
 def init(
